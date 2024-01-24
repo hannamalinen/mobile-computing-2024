@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.border
-import androidx.compose.material3.Surface
 import android.content.res.Configuration
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,26 +34,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.material3.Button
+
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavController
+
+import androidx.compose.ui.Alignment
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             HW1ComposeTutorialTheme {
+                AppNavigation()
                 // A surface container using the 'background' color from the theme
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+                // Surface(
+                //    modifier = Modifier.fillMaxSize(),
+                //    color = MaterialTheme.colorScheme.background
+                //) {
                     // Greeting("Android")
                 }
-                Conversation(SampleData.conversationSample)
+                // Conversation(SampleData.conversationSample)
             }
             // Text("Hello world!")
-            // MessageCard(Message("Hanna", "Moi miten menee"))
+            // MessageCard(Message("Hanna", "Hello what's up"))
         }
     }
-}
+//}
 
 data class Message(val author: String, val body: String)
 
@@ -81,6 +89,7 @@ fun MessageCard(msg: Message) {
         // surfaceColor will be updated gradually from one color to the other
         val surfaceColor by animateColorAsState(
             if (isExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+            label = "",
         )
 
         // we toggle the isExpanded variable when we click on this Column
@@ -151,6 +160,7 @@ fun PreviewMessageCard() {
     }
 }
 
+
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {
     Text(
@@ -164,5 +174,55 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 fun GreetingPreview() {
     HW1ComposeTutorialTheme {
         Greeting("Android")
+    }
+}
+
+@Composable
+fun AppNavigation() {
+    val navController = rememberNavController()
+    NavHost(navController, startDestination = "first") {
+        composable("first") { FirstView(navController) }
+        composable("second") { SecondView(navController) }
+    }
+}
+
+@Composable
+fun FirstView(navController: NavController) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Button(
+            onClick = { navController.navigate("second") },
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            Text("To the another view")
+        }
+
+        // include conversation to the first view
+        Conversation(SampleData.conversationSample)
+    }
+}
+
+@Composable
+fun SecondView(navController: NavController) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Button(
+            onClick = { navController.popBackStack() },
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            Text("Back to business")
+        }
+
+        // other view
+        Text("Welcome to the dark side!", Modifier.align(Alignment.CenterHorizontally))
+        Image(
+            painter = painterResource(R.drawable.profiilikuva_jpg),
+            contentDescription = "Contact profile picture",
+            modifier = Modifier
+                // set image size to 40 dp
+                .size(40.dp)
+                // clip image to be shaped as a circle
+                .clip(CircleShape)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                .align(Alignment.CenterHorizontally)
+        )
     }
 }
