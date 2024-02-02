@@ -49,6 +49,8 @@ import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -254,16 +256,50 @@ fun AppNavigation() {
 @Composable
 fun FirstView(navController: NavController, viewModel: UserProfileViewModel) {
     val userProfile by viewModel.userProfile.observeAsState()
+
     Column(modifier = Modifier.fillMaxSize()) {
-        Button(
-            onClick = { navController.navigate("second") },
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+        // ylareunan layout kayttäjan tervehdykselle, profiilikuvalle ja asetukset-napille
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("user settings")
+            // vasemmalla puolella profiilikuva ja tervehdys
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                userProfile?.imageUri?.let { imageUri ->
+                    if (imageUri.isNotEmpty()) {
+                        Image(
+                            painter = rememberAsyncImagePainter(model = imageUri),
+                            contentDescription = "Profile Picture",
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, MaterialTheme.colorScheme.secondary, CircleShape)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "Hello, ${userProfile?.username ?: "Guest"}!",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+            // oikealla puolella asetukset-nappi
+            Button(onClick = { navController.navigate("second") }) {
+                Text("Settings")
+            }
         }
 
-        // conversation mukaan ekaan nakymaan
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // keskusteluosio
         Conversation(SampleData.conversationSample)
+
     }
 }
 
