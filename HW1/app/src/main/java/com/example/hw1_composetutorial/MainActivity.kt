@@ -1,5 +1,7 @@
 package com.example.hw1_composetutorial
 
+import android.app.Application
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -35,13 +37,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material3.Button
-
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
-
 import androidx.compose.ui.Alignment
+
+import android.net.Uri
+import android.util.Log
+// import androidx.activity.compose.registerForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import coil.compose.AsyncImage
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.material3.TextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.hw1_composetutorial.ui.theme.AppDatabase
+import com.example.hw1_composetutorial.ui.theme.UserProfile
+import kotlinx.coroutines.launch
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.AndroidViewModel
+import androidx.room.Room
+import androidx.core.net.toUri
+import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.rememberAsyncImagePainter
+import coil.compose.rememberImagePainter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,14 +80,14 @@ class MainActivity : ComponentActivity() {
                 //    modifier = Modifier.fillMaxSize(),
                 //    color = MaterialTheme.colorScheme.background
                 //) {
-                    // Greeting("Android")
-                }
-                // Conversation(SampleData.conversationSample)
+                // Greeting("Android")
             }
-            // Text("Hello world!")
-            // MessageCard(Message("Hanna", "Hello what's up"))
+            // Conversation(SampleData.conversationSample)
         }
+        // Text("Hello world!")
+        // MessageCard(Message("Hanna", "Hello what's up"))
     }
+}
 //}
 
 data class Message(val author: String, val body: String)
@@ -109,7 +135,7 @@ fun MessageCard(msg: Message) {
                 color = surfaceColor,
                 // animateContentSize will change the Surface size gradually
                 modifier = Modifier.animateContentSize().padding(1.dp)
-                ) {
+            ) {
                 Text(
                     text = msg.body,
                     modifier = Modifier.padding(all = 4.dp),
@@ -177,52 +203,150 @@ fun GreetingPreview() {
     }
 }
 
+// luokka user profile -nakyman hallintaan
+class UserProfileViewModel(application: Application) : AndroidViewModel(application) {
+    private val db: AppDatabase by lazy {
+        // alusta tietokanta
+        Room.databaseBuilder(application, AppDatabase::class.java, "user_profile_db")
+            .fallbackToDestructiveMigration() // kehitysvaihe
+            .build()
+    }
+
+    val userProfile = MutableLiveData<UserProfile?>()
+
+    init {
+        loadUserProfile()
+    }
+// tallenna kayttajan profiili
+    fun saveUserProfile(username: String, imageUri: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val newUserProfile = UserProfile(username = username, imageUri = imageUri ?: "")
+                db.userProfileDao().insertOrUpdateUserProfile(newUserProfile)
+                userProfile.postValue(newUserProfile)
+
+            // log errorien virheiden nappaamiseen
+            } catch (e: Exception) {
+                Log.e("UserProfileViewModel", "Error saving user profile", e)
+            }
+        }
+    }
+// lataa kayttajan profiili
+    private fun loadUserProfile() {
+        viewModelScope.launch {
+            userProfile.postValue(db.userProfileDao().getLastUserProfile())
+        }
+    }
+}
+
+// navigointi
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    val viewModel: UserProfileViewModel = viewModel()
+
     NavHost(navController, startDestination = "first") {
-        composable("first") { FirstView(navController) }
-        composable("second") { SecondView(navController) }
+        composable("first") { FirstView(navController, viewModel) }
+        composable("second") { SecondView(navController, viewModel) }
     }
 }
 
 @Composable
-fun FirstView(navController: NavController) {
+fun FirstView(navController: NavController, viewModel: UserProfileViewModel) {
+    val userProfile by viewModel.userProfile.observeAsState()
     Column(modifier = Modifier.fillMaxSize()) {
         Button(
             onClick = { navController.navigate("second") },
             modifier = Modifier.align(Alignment.CenterHorizontally)
         ) {
-            Text("To the another view")
+            Text("user settings")
         }
 
-        // include conversation to the first view
+        // conversation mukaan ekaan nakymaan
         Conversation(SampleData.conversationSample)
     }
 }
 
 @Composable
-fun SecondView(navController: NavController) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Button(
-            onClick = { navController.popBackStack() },
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        ) {
-            Text("Back to business")
-        }
+fun SecondView(navController: NavController, viewModel: UserProfileViewModel) {
+    // liveDatan seuranta
+    val userProfile by viewModel.userProfile.observeAsState()
 
-        // other view
-        Text("Welcome to the dark side!", Modifier.align(Alignment.CenterHorizontally))
-        Image(
-            painter = painterResource(R.drawable.profiilikuva_jpg),
-            contentDescription = "Contact profile picture",
-            modifier = Modifier
-                // set image size to 40 dp
-                .size(40.dp)
-                // clip image to be shaped as a circle
-                .clip(CircleShape)
-                .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                .align(Alignment.CenterHorizontally)
+    // alusta tilamuuttujat
+    var username by remember { mutableStateOf(userProfile?.username ?: "") }
+    var imageUri by remember { mutableStateOf(userProfile?.imageUri ?: "") }
+
+    // kuvan valinta profiilikuvaan
+    val context = LocalContext.current
+    val openDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri?.let {
+            try {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                val contentResolver = context.contentResolver
+                contentResolver.takePersistableUriPermission(uri, takeFlags)
+                imageUri = uri.toString()
+            // log errorien virheiden nappaamiseen
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error granting persistable permission", e)
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(16.dp))
+        // Text(text = "my profile", style = MaterialTheme.typography.titleLarge)
+        // paivita otsikko kayttajanimen mukaan
+        val title = userProfile?.username?.let { "$it's profile" } ?: "my profile"
+        Text(text = title, style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        if (imageUri.isNotEmpty()) {
+            val painter = rememberAsyncImagePainter(model = imageUri)
+            Image(
+                painter = painter,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+            )
+        } else {
+            Image(
+                painter = painterResource(R.drawable.profiilikuva_jpg),
+                contentDescription = "Profiilikuva",
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        // Text(text = "My profile", style = MaterialTheme.typography.bodyLarge)
+        TextField(
+            value = username,
+            onValueChange = { username = it },
+            label = { Text("my name") }
         )
+        Spacer(modifier = Modifier.height(16.dp))
+        // aseta uusi profiilikuva
+        Button(onClick = { openDocumentLauncher.launch(arrayOf("image/*")) }) {
+            Text("set a new profile picture")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        // tallenna profiili
+        Button(onClick = {
+            if (username.isNotEmpty() && imageUri.isNotEmpty()) {
+                viewModel.saveUserProfile(username, imageUri)
+            }
+        }) {
+            Text("save")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { navController.navigate("first") }) {
+            Text("back 2 conversations")
+        }
     }
 }
+
