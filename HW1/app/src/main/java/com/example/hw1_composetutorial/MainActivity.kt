@@ -1,7 +1,10 @@
 package com.example.hw1_composetutorial
 
+import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.border
 import android.content.res.Configuration
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.clickable
@@ -44,18 +49,17 @@ import androidx.navigation.NavController
 import androidx.compose.ui.Alignment
 
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 // import androidx.activity.compose.registerForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import coil.compose.AsyncImage
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Switch
 import androidx.compose.material3.TextField
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hw1_composetutorial.ui.theme.AppDatabase
 import com.example.hw1_composetutorial.ui.theme.UserProfile
@@ -63,20 +67,36 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.AndroidViewModel
 import androidx.room.Room
-import androidx.core.net.toUri
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import coil.compose.rememberAsyncImagePainter
-import coil.compose.rememberImagePainter
-import kotlinx.coroutines.CoroutineScope
+import com.example.hw1_composetutorial.ui.theme.NotificationUtils
+import com.example.hw1_composetutorial.ui.theme.PermissionRequester
+import com.example.hw1_composetutorial.ui.theme.SensorDataWorker
+import com.example.hw1_composetutorial.ui.theme.SensorHandler
 import kotlinx.coroutines.Dispatchers
+import java.util.concurrent.TimeUnit
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), PermissionRequester {
+
+    private lateinit var sensorHandler: SensorHandler
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationUtils.createNotificationChannel(this)
+        sensorHandler = SensorHandler(this, this)
+
+        val sensorDataWorkRequest = OneTimeWorkRequestBuilder<SensorDataWorker>().build()
+        WorkManager.getInstance(this).enqueue(sensorDataWorkRequest)
+
+
         setContent {
             HW1ComposeTutorialTheme {
-                AppNavigation()
+                AppNavigation(this as PermissionRequester)
                 // A surface container using the 'background' color from the theme
                 // Surface(
                 //    modifier = Modifier.fillMaxSize(),
@@ -89,8 +109,43 @@ class MainActivity : ComponentActivity() {
         // Text("Hello world!")
         // MessageCard(Message("Hanna", "Hello what's up"))
     }
+
+    override fun onResume() {
+        super.onResume()
+        sensorHandler.registerSensorListener()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // sensorHandler.unregisterSensorListener()
+    }
+
+    companion object {
+        private const val REQUEST_CODE_POST_NOTIFICATION = 101 // Esimerkki pyyntö koodista
+    }
+
+    override fun requestPostNotificationPermission() {
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_CODE_POST_NOTIFICATION)
+    }
+
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_CODE_POST_NOTIFICATION && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            sensorHandler.onPermissionGranted()
+        }
+    }
+
+    override fun onPermissionGranted() {
+        sensorHandler.onPermissionGranted()
+    }
 }
-//}
+
+
+interface PermissionRequester {
+    fun requestPostNotificationPermission()
+    fun onPermissionGranted()
+}
 
 data class Message(val author: String, val body: String)
 
@@ -219,7 +274,7 @@ class UserProfileViewModel(application: Application) : AndroidViewModel(applicat
     init {
         loadUserProfile()
     }
-// tallenna kayttajan profiili
+    // tallenna kayttajan profiili
     fun saveUserProfile(username: String, imageUri: String?) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -227,13 +282,13 @@ class UserProfileViewModel(application: Application) : AndroidViewModel(applicat
                 db.userProfileDao().insertOrUpdateUserProfile(newUserProfile)
                 userProfile.postValue(newUserProfile)
 
-            // log errorien virheiden nappaamiseen
+                // log errorien virheiden nappaamiseen
             } catch (e: Exception) {
                 Log.e("UserProfileViewModel", "Error saving user profile", e)
             }
         }
     }
-// lataa kayttajan profiili
+    // lataa kayttajan profiili
     private fun loadUserProfile() {
         viewModelScope.launch {
             userProfile.postValue(db.userProfileDao().getLastUserProfile())
@@ -243,13 +298,13 @@ class UserProfileViewModel(application: Application) : AndroidViewModel(applicat
 
 // navigointi
 @Composable
-fun AppNavigation() {
+fun AppNavigation(permissionRequester: PermissionRequester) {
     val navController = rememberNavController()
     val viewModel: UserProfileViewModel = viewModel()
 
     NavHost(navController, startDestination = "first") {
         composable("first") { FirstView(navController, viewModel) }
-        composable("second") { SecondView(navController, viewModel) }
+        composable("second") { SecondView(navController, viewModel, permissionRequester) }
     }
 }
 
@@ -304,16 +359,34 @@ fun FirstView(navController: NavController, viewModel: UserProfileViewModel) {
 }
 
 @Composable
-fun SecondView(navController: NavController, viewModel: UserProfileViewModel) {
+fun SecondView(navController: NavController, viewModel: UserProfileViewModel, permissionRequester: PermissionRequester) {
     // liveDatan seuranta
     val userProfile by viewModel.userProfile.observeAsState()
+
+    // kuvan valinta profiilikuvaan
+    val context = LocalContext.current
 
     // alusta tilamuuttujat
     var username by remember { mutableStateOf(userProfile?.username ?: "") }
     var imageUri by remember { mutableStateOf(userProfile?.imageUri ?: "") }
+    var areNotificationsEnabled by remember { mutableStateOf(userProfile?.areNotificationsEnabled ?: false) }
 
-    // kuvan valinta profiilikuvaan
-    val context = LocalContext.current
+    LaunchedEffect(areNotificationsEnabled) {
+        // Tallenna asetus joka kerta kun se muuttuu.
+        val prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("NotificationsEnabled", areNotificationsEnabled).apply()
+    }
+
+    val notificationPermissionGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true // API-taso < Tiramisu, ilmoitusoikeutta ei tarvita
+    }
+    LaunchedEffect(notificationPermissionGranted) {
+        areNotificationsEnabled = notificationPermissionGranted
+    }
+
+
     val openDocumentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
             try {
@@ -321,7 +394,7 @@ fun SecondView(navController: NavController, viewModel: UserProfileViewModel) {
                 val contentResolver = context.contentResolver
                 contentResolver.takePersistableUriPermission(uri, takeFlags)
                 imageUri = uri.toString()
-            // log errorien virheiden nappaamiseen
+                // log errorien virheiden nappaamiseen
             } catch (e: Exception) {
                 Log.e("MainActivity", "Error granting persistable permission", e)
             }
@@ -379,10 +452,30 @@ fun SecondView(navController: NavController, viewModel: UserProfileViewModel) {
         }) {
             Text("save")
         }
+
+        // notifications switch
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Notifications")
+            Switch(
+                checked = areNotificationsEnabled,
+                onCheckedChange = { enabled ->
+                    areNotificationsEnabled = enabled
+                    if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissionRequester.requestPostNotificationPermission()
+                    }
+                }
+            )
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { navController.navigate("first") }) {
             Text("back 2 conversations")
         }
     }
 }
-
