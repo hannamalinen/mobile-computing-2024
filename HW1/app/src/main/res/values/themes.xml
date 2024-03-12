@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
     <style name="Theme.HW1ComposeTutorial" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.HW1ComposeTutorial.SplashScreen" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/coral_pink</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/icons8_heart_48</item>
+        <item name="postSplashScreenTheme">@style/Theme.HW1ComposeTutorial</item>
+    </style>
 </resources>
