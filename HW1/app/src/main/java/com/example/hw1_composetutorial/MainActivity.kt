@@ -71,6 +71,7 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -87,12 +88,16 @@ class MainActivity : ComponentActivity(), PermissionRequester {
     private lateinit var sensorHandler: SensorHandler
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Thread.sleep(2000)
+        installSplashScreen()
+
         NotificationUtils.createNotificationChannel(this)
         sensorHandler = SensorHandler(this, this)
 
         val sensorDataWorkRequest = OneTimeWorkRequestBuilder<SensorDataWorker>().build()
         WorkManager.getInstance(this).enqueue(sensorDataWorkRequest)
 
+        // setTheme(R.style.Theme_HW1ComposeTutorial_SplashScreen)
 
         setContent {
             HW1ComposeTutorialTheme {
